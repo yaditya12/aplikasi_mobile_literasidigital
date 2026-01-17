@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "943850569802",
+    "project_id": "literasidigital-3ed9a",
+    "storage_bucket": "literasidigital-3ed9a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:943850569802:android:707c0e5a65d270dcdfe6b3",
+        "android_client_info": {
+          "package_name": "com.example.flutter_application_1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB-tL_CiFpotG5PAG2nqhVTGYufz19PBNY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:943850569802:android:3dea007a72bd9ad1dfe6b3",
+        "android_client_info": {
+          "package_name": "com.literasidigital.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB-tL_CiFpotG5PAG2nqhVTGYufz19PBNY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
