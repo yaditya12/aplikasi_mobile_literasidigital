@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../data/materi.dart';
+import '../data/materi.dart'; // Jika butuh model untuk tombol Review (opsional)
 
 class ResultPage extends StatefulWidget {
-  final int score;
-  final int total;
-  final MateriModel? materi; // Pastikan parameter ini ada
+  final int score; // Jumlah jawaban benar
+  final int total; // Total soal
+  final MateriModel? materi; // Opsional: untuk tombol "Coba Lagi" atau "Review"
 
   const ResultPage({
     super.key, 
@@ -21,52 +21,37 @@ class ResultPage extends StatefulWidget {
 
 class _ResultPageState extends State<ResultPage> {
   int earnedPoints = 0;
-  int finalScore = 0; // Nilai skala 0-100
-  bool isUpdating = true;
+  bool isUpdating = true; // Status loading update poin
 
   @override
   void initState() {
     super.initState();
-    _calculateAndSaveData();
+    _calculateAndSavePoints();
   }
 
-  void _calculateAndSaveData() async {
-    // 1. Hitung Nilai (Skala 100)
+  // --- LOGIKA HITUNG & SIMPAN POIN ---
+  void _calculateAndSavePoints() async {
+    // 1. Hitung Nilai (0 - 100)
+    // Jika skor 100% -> Poin 100.
     double percentage = (widget.score / widget.total) * 100;
-    finalScore = percentage.round();
-    earnedPoints = finalScore; // Bisa disesuaikan rumusnya
+    earnedPoints = percentage.round();
 
+    // 2. Simpan ke Firebase (Hanya jika poin > 0)
     final user = FirebaseAuth.instance.currentUser;
-    
-    if (user != null) {
+    if (user != null && earnedPoints > 0) {
       try {
-        final userRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
-
-        // 2. Update Poin Total User
-        if (earnedPoints > 0) {
-          await userRef.update({
-            'points': FieldValue.increment(earnedPoints),
-          });
-        }
-
-        // 3. SIMPAN RIWAYAT KUIS (BARU)
-        // Kita simpan ke sub-collection 'history' agar rapi
-        await userRef.collection('history').add({
-          'quizTitle': widget.materi?.title ?? "Kuis Tanpa Judul",
-          'score': finalScore,
-          'correct': widget.score,
-          'totalQuestions': widget.total,
-          'timestamp': FieldValue.serverTimestamp(), // Waktu pengerjaan
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+          // FieldValue.increment() sangat penting agar poin bertambah, bukan menimpa
+          'points': FieldValue.increment(earnedPoints),
         });
-
       } catch (e) {
-        debugPrint("Gagal simpan data: $e");
+        print("Gagal update poin: $e");
       }
     }
 
     if (mounted) {
       setState(() {
-        isUpdating = false;
+        isUpdating = false; // Selesai update
       });
     }
   }
@@ -81,44 +66,50 @@ class _ResultPageState extends State<ResultPage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.check_circle, size: 100, color: Colors.green), // Ikon Centang Besar
+              // Gambar Piala atau Icon
+              const Icon(Icons.emoji_events_rounded, size: 100, color: Colors.amber),
               const SizedBox(height: 20),
               
               const Text("Kuis Selesai!", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
               const SizedBox(height: 10),
               
               Text(
-                "Nilai Kamu: $finalScore",
-                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.indigo),
-              ),
-              Text(
-                "Benar ${widget.score} dari ${widget.total} soal",
-                style: const TextStyle(fontSize: 16, color: Colors.grey),
+                "Skor Kamu: ${widget.score} / ${widget.total}",
+                style: const TextStyle(fontSize: 18, color: Colors.grey),
               ),
               const SizedBox(height: 30),
 
+              // Kartu Poin yang Didapat
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
-                decoration: BoxDecoration(color: Colors.indigo.shade50, borderRadius: BorderRadius.circular(20)),
+                decoration: BoxDecoration(
+                  color: Colors.indigo.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.indigo.shade100),
+                ),
                 child: Column(
                   children: [
                     const Text("Poin Diperoleh", style: TextStyle(color: Colors.indigo)),
                     const SizedBox(height: 5),
                     isUpdating 
                       ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                      : Text("+$earnedPoints", style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.indigo)),
+                      : Text(
+                          "+$earnedPoints", 
+                          style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.indigo)
+                        ),
                   ],
                 ),
               ),
 
               const SizedBox(height: 50),
 
+              // Tombol Kembali
               SizedBox(
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
                   onPressed: () {
-                    // Kembali ke Home dan hapus history tumpukan page
+                    // Kembali ke Halaman Utama dan Hapus semua tumpukan halaman kuis
                     Navigator.popUntil(context, (route) => route.isFirst);
                   },
                   style: ElevatedButton.styleFrom(

@@ -1,15 +1,20 @@
+import 'dart:io'; 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart'; // Import Storage
+import 'package:image_picker/image_picker.dart'; // Import Image Picker
 
 class EditProfilePage extends StatefulWidget {
   final String currentUsername;
   final String currentEmail;
+  final String? currentPhotoUrl; // Pastikan baris ini ada
 
   const EditProfilePage({
     super.key, 
     required this.currentUsername, 
-    required this.currentEmail
+    required this.currentEmail,
+    this.currentPhotoUrl, // Pastikan ini juga ada
   });
 
   @override
@@ -19,29 +24,32 @@ class EditProfilePage extends StatefulWidget {
 class _EditProfilePageState extends State<EditProfilePage> {
   late TextEditingController _usernameController;
   late TextEditingController _emailController;
+  
   bool _isLoading = false;
+  File? _imageFile; 
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
-    // Isi form dengan data lama yang dikirim dari halaman sebelumnya
     _usernameController = TextEditingController(text: widget.currentUsername);
     _emailController = TextEditingController(text: widget.currentEmail);
   }
 
-  @override
-  void dispose() {
-    _usernameController.dispose();
-    _emailController.dispose();
-    super.dispose();
+  // Fungsi Ambil Gambar
+  Future<void> _pickImage() async {
+    final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery);
+    if (pickedFile != null) {
+      setState(() {
+        _imageFile = File(pickedFile.path);
+      });
+    }
   }
 
-  // Fungsi Simpan Perubahan
+  // Fungsi Simpan
   void _saveProfile() async {
     if (_usernameController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Username tidak boleh kosong")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Username tidak boleh kosong")));
       return;
     }
 
@@ -49,12 +57,23 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
     try {
       String uid = FirebaseAuth.instance.currentUser!.uid;
+      String? newPhotoUrl = widget.currentPhotoUrl; 
 
-      // Update data di Firestore
+      // Upload Foto ke Firebase Storage
+      if (_imageFile != null) {
+        final storageRef = FirebaseStorage.instance
+            .ref()
+            .child('profile_images')
+            .child('$uid.jpg'); 
+
+        await storageRef.putFile(_imageFile!); 
+        newPhotoUrl = await storageRef.getDownloadURL(); 
+      }
+
+      // Update Database Firestore
       await FirebaseFirestore.instance.collection('users').doc(uid).update({
         'username': _usernameController.text.trim(),
-        // Email biasanya tidak diupdate di sini karena butuh verifikasi ulang auth
-        // Jadi kita hanya update username saja
+        'photoUrl': newPhotoUrl, 
       });
 
       if (!mounted) return;
@@ -63,7 +82,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         const SnackBar(backgroundColor: Colors.green, content: Text("Profil berhasil diperbarui!")),
       );
 
-      Navigator.pop(context); // Kembali ke halaman profil
+      Navigator.pop(context); 
 
     } catch (e) {
       if (!mounted) return;
@@ -77,6 +96,16 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   @override
   Widget build(BuildContext context) {
+    // Logika Tampilan Foto
+    ImageProvider avatarImage;
+    if (_imageFile != null) {
+      avatarImage = FileImage(_imageFile!);
+    } else if (widget.currentPhotoUrl != null && widget.currentPhotoUrl!.isNotEmpty) {
+      avatarImage = NetworkImage(widget.currentPhotoUrl!);
+    } else {
+      avatarImage = NetworkImage("https://ui-avatars.com/api/?name=${widget.currentUsername}&background=random&size=128&color=fff");
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -90,17 +119,34 @@ class _EditProfilePageState extends State<EditProfilePage> {
         child: Column(
           children: [
             const SizedBox(height: 20),
-            // Avatar Preview (Akan berubah real-time saat mengetik jika mau, tapi ini statis dulu)
-            CircleAvatar(
-              radius: 50,
-              backgroundColor: Colors.indigo.shade50,
-              backgroundImage: NetworkImage(
-                "https://ui-avatars.com/api/?name=${_usernameController.text}&background=random&size=128&color=fff"
+            Center(
+              child: Stack(
+                children: [
+                  CircleAvatar(
+                    radius: 60,
+                    backgroundColor: Colors.grey.shade200,
+                    backgroundImage: avatarImage,
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: GestureDetector(
+                      onTap: _pickImage, 
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF00BFA5),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 3),
+                        ),
+                        child: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 30),
-
-            // Input Username
             TextField(
               controller: _usernameController,
               decoration: InputDecoration(
@@ -110,11 +156,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
               ),
             ),
             const SizedBox(height: 20),
-
-            // Input Email (Read Only / Tidak bisa diedit sembarangan)
             TextField(
               controller: _emailController,
-              readOnly: true, // Email dikunci
+              readOnly: true,
               style: const TextStyle(color: Colors.grey),
               decoration: InputDecoration(
                 labelText: "Email (Tidak dapat diubah)",
@@ -124,10 +168,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 fillColor: Colors.grey.shade100,
               ),
             ),
-            
             const SizedBox(height: 40),
-
-            // Tombol Simpan
             SizedBox(
               width: double.infinity,
               height: 50,

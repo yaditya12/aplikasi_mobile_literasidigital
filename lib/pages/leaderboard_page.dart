@@ -1,248 +1,207 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class LeaderboardPage extends StatelessWidget {
   const LeaderboardPage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+
     return Scaffold(
-      // Background Gradient
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF4A47F5), Color(0xFF00B7FF)],
+      backgroundColor: const Color(0xFFF8F9FE), 
+      appBar: AppBar(
+        title: const Text("Papan Peringkat", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+        centerTitle: true,
+        backgroundColor: const Color(0xFF6A11CB),
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: Column(
+        children: [
+          // Header Dekorasi
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 30),
+            decoration: const BoxDecoration(
+              color: Color(0xFF6A11CB),
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
+            ),
+            child: const Column(
+              children: [
+                Icon(Icons.emoji_events, size: 60, color: Colors.amber),
+                SizedBox(height: 10),
+                Text("Top Siswa Berprestasi", style: TextStyle(color: Colors.white70, fontSize: 16)),
+              ],
+            ),
           ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              _buildHeader(context),
-              
-              // MENGAMBIL DATA DARI FIREBASE
-              Expanded(
-                child: StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance
-                      .collection('users')
-                      .orderBy('points', descending: true) // Urutkan poin tertinggi
-                      .limit(50) // Batasi 50 besar agar ringan
-                      .snapshots(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator(color: Colors.white));
-                    }
-                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                      return const Center(child: Text("Belum ada data peringkat", style: TextStyle(color: Colors.white)));
-                    }
+          
+          // List Peringkat
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('users')
+                  .where('role', isEqualTo: 'student') 
+                  .orderBy('points', descending: true) 
+                  .limit(50) 
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-                    final docs = snapshot.data!.docs;
-                    
-                    // Pisahkan Top 3 dengan Sisa List
-                    // Logika: Ambil data jika ada, jika tidak ada (misal user cuma 1), return null
-                    final first = docs.isNotEmpty ? docs[0] : null;
-                    final second = docs.length > 1 ? docs[1] : null;
-                    final third = docs.length > 2 ? docs[2] : null;
-                    
-                    // Ambil sisa list (mulai dari index 3 ke atas)
-                    final restOfUsers = docs.length > 3 ? docs.sublist(3) : <QueryDocumentSnapshot>[];
-
-                    return Column(
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // --- BAGIAN PODIUM (TOP 3) ---
-                        _buildTopThree(first, second, third),
+                        Icon(Icons.person_off, size: 60, color: Colors.grey),
+                        SizedBox(height: 10),
+                        Text("Belum ada data siswa.", style: TextStyle(color: Colors.grey)),
+                      ],
+                    ),
+                  );
+                }
 
-                        const SizedBox(height: 20),
+                final docs = snapshot.data!.docs;
 
-                        // --- BAGIAN LIST BAWAH (RANK 4++) ---
-                        Expanded(
-                          child: _buildRankingList(restOfUsers),
+                return ListView.builder(
+                  padding: const EdgeInsets.all(20),
+                  itemCount: docs.length,
+                  itemBuilder: (context, index) {
+                    final data = docs[index].data() as Map<String, dynamic>;
+                    
+                    String name = data['username'] ?? "Tanpa Nama";
+                    int points = data['points'] ?? 0;
+                    String uid = data['uid'] ?? "";
+                    
+                    bool isMe = (uid == currentUid);
+                    int rank = index + 1;
+
+                    return _buildRankItem(rank, name, points, isMe);
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // WIDGET KARTU PERINGKAT (DIPERBARUI)
+  Widget _buildRankItem(int rank, String name, int points, bool isMe) {
+    Color? medalColor;
+    
+    // Logika Warna Medali
+    if (rank == 1) {
+      medalColor = const Color(0xFFFFD700); // Emas
+    } else if (rank == 2) {
+      medalColor = const Color(0xFFC0C0C0); // Perak
+    } else if (rank == 3) {
+      medalColor = const Color(0xFFCD7F32); // Perunggu
+    }
+
+    return Transform.scale(
+      scale: isMe ? 1.02 : 1.0, 
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 15),
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 15),
+        decoration: BoxDecoration(
+          color: isMe ? const Color(0xFFE8EAF6) : Colors.white, 
+          borderRadius: BorderRadius.circular(15),
+          border: isMe ? Border.all(color: const Color(0xFF6A11CB), width: 2) : null,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // --- KOLOM PERINGKAT DENGAN ANGKA ---
+            SizedBox(
+              width: 50, // Lebar area peringkat
+              child: medalColor != null
+                  ? Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        // Ikon Piala di Belakang
+                        Icon(Icons.emoji_events, color: medalColor, size: 45),
+                        // Angka Peringkat di Tengah Piala
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 5), // Geser angka sedikit ke atas agar pas
+                          child: Text(
+                            "$rank",
+                            style: const TextStyle(
+                              color: Colors.white, 
+                              fontWeight: FontWeight.bold, 
+                              fontSize: 14,
+                              shadows: [Shadow(blurRadius: 2, color: Colors.black26, offset: Offset(0, 1))]
+                            ),
+                          ),
                         ),
                       ],
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // --- HEADER ---
-  Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(20.0),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
-            onPressed: () => Navigator.pop(context),
-          ),
-          const SizedBox(width: 10),
-          const Text(
-            "Leaderboard",
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
+                    )
+                  : Text(
+                      "#$rank",
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.grey),
+                      textAlign: TextAlign.center,
+                    ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
+            const SizedBox(width: 10),
 
-  // --- PODIUM WIDGET (JUARA 1, 2, 3) ---
-  Widget _buildTopThree(QueryDocumentSnapshot? first, QueryDocumentSnapshot? second, QueryDocumentSnapshot? third) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.end, // Agar sejajar bawah
-        children: [
-          // JUARA 2 (KIRI)
-          if (second != null) 
-            Expanded(child: _buildPodiumUser(second, "2", 80, Colors.teal)),
-          if (second == null) const Spacer(), // Spacer jika data tidak ada
+            // --- AVATAR & NAMA ---
+            CircleAvatar(
+              radius: 22,
+              backgroundColor: Colors.grey.shade200,
+              backgroundImage: NetworkImage(
+                "https://ui-avatars.com/api/?name=$name&background=random&color=fff"
+              ),
+            ),
+            const SizedBox(width: 15),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold, 
+                      fontSize: 16,
+                      color: isMe ? const Color(0xFF6A11CB) : Colors.black87
+                    ),
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                  ),
+                  if (isMe) 
+                    const Text("(Saya)", style: TextStyle(fontSize: 10, color: Colors.grey)),
+                ],
+              ),
+            ),
 
-          // JUARA 1 (TENGAH - LEBIH BESAR)
-          if (first != null) 
-            Expanded(child: _buildPodiumUser(first, "1", 110, Colors.orange, isGrand: true)),
-          
-          // JUARA 3 (KANAN)
-          if (third != null) 
-            Expanded(child: _buildPodiumUser(third, "3", 80, Colors.blueAccent)),
-          if (third == null) const Spacer(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPodiumUser(QueryDocumentSnapshot data, String rank, double size, Color badgeColor, {bool isGrand = false}) {
-    final Map<String, dynamic> user = data.data() as Map<String, dynamic>;
-    String name = user['username'] ?? 'User';
-    int points = user['points'] ?? 0;
-
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        Stack(
-          alignment: Alignment.bottomCenter,
-          children: [
-            // Foto Profil (Avatar)
+            // --- POIN ---
             Container(
-              width: size,
-              height: size,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 3),
-                image: DecorationImage(
-                  // Menggunakan UI Avatars agar dinamis sesuai nama
-                  image: NetworkImage("https://ui-avatars.com/api/?name=$name&background=random&size=128"),
-                  fit: BoxFit.cover,
-                ),
+                color: Colors.amber.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(20),
               ),
-            ),
-            // Badge Angka (1, 2, 3)
-            Transform.translate(
-              offset: const Offset(0, 10),
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: badgeColor,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
-                ),
-                child: Text(
-                  rank,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                ),
+              child: Row(
+                children: [
+                  const Icon(Icons.stars, color: Colors.amber, size: 16),
+                  const SizedBox(width: 4),
+                  Text(
+                    "$points",
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange, fontSize: 14),
+                  ),
+                ],
               ),
             ),
           ],
         ),
-        const SizedBox(height: 15),
-        Text(
-          name,
-          style: TextStyle(
-            color: Colors.white, 
-            fontWeight: FontWeight.bold,
-            fontSize: isGrand ? 16 : 14,
-          ),
-          overflow: TextOverflow.ellipsis,
-          maxLines: 1,
-        ),
-        Text(
-          "$points pts",
-          style: const TextStyle(color: Colors.white70, fontSize: 12),
-        ),
-      ],
-    );
-  }
-
-  // --- LIST WIDGET (RANK 4 KE BAWAH) ---
-  Widget _buildRankingList(List<QueryDocumentSnapshot> docs) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(30),
-          topRight: Radius.circular(30),
-        ),
-      ),
-      child: ListView.separated(
-        padding: const EdgeInsets.all(20),
-        itemCount: docs.length,
-        separatorBuilder: (context, index) => Divider(color: Colors.grey[200]),
-        itemBuilder: (context, index) {
-          final data = docs[index].data() as Map<String, dynamic>;
-          int currentRank = index + 4; // Karena index mulai 0, dan ini rank ke-4
-
-          return ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: SizedBox(
-              width: 40,
-              child: Text(
-                "#$currentRank",
-                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 16),
-                textAlign: TextAlign.center,
-              ),
-            ),
-            title: Row(
-              children: [
-                CircleAvatar(
-                  radius: 20,
-                  backgroundColor: Colors.indigo.shade50,
-                  backgroundImage: NetworkImage(
-                    "https://ui-avatars.com/api/?name=${data['username']}&background=random&color=fff"
-                  ),
-                ),
-                const SizedBox(width: 15),
-                Expanded(
-                  child: Text(
-                    data['username'] ?? "User",
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-            trailing: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.indigo.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                "${data['points']} pts",
-                style: const TextStyle(color: Colors.indigo, fontWeight: FontWeight.bold, fontSize: 12),
-              ),
-            ),
-          );
-        },
       ),
     );
   }

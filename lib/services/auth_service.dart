@@ -2,74 +2,82 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AuthService {
-  // Instance Firebase
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // --- FUNGSI DAFTAR (REGISTER) ---
-  // Sekarang menerima parameter 'role' (teacher/student)
-  Future<String> registerUser({
-    required String email,
+  // --- FUNGSI LOGIN (SUDAH ADA PARAMETER expectedRole) ---
+  Future<String?> login({
+    required String email, 
     required String password,
-    required String username,
-    required String role, // <--- Parameter Baru ditambahkan
+    required String expectedRole, // <-- Ini parameter yang sebelumnya hilang
   }) async {
     try {
-      // 1. Buat Akun di Authentication
-      UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+      // 1. Cek Email & Password di Firebase Auth
+      UserCredential userCredential = await _auth.signInWithEmailAndPassword(email: email, password: password);
 
-      // 2. Simpan Data Profil ke Firestore
-      String uid = userCredential.user!.uid;
-
-      await _firestore.collection('users').doc(uid).set({
-        'uid': uid,
-        'username': username,
-        'email': email,
-        'points': 0,        // Poin awal
-        'role': role,       // <--- Simpan role yang dipilih (teacher/student)
-        'createdAt': FieldValue.serverTimestamp(), // Gunakan server timestamp agar akurat
-      });
+      // 2. Ambil data user dari Firestore untuk mengecek rolenya
+      DocumentSnapshot doc = await _firestore.collection('users').doc(userCredential.user!.uid).get();
+      
+      if (doc.exists) {
+        String actualRole = doc['role'] ?? 'student';
+        
+        // 3. Cek apakah role yang dipilih di layar login sesuai dengan database
+        if (actualRole != expectedRole) {
+          await _auth.signOut(); // Keluarkan paksa jika salah pintu
+          String roleName = expectedRole == 'teacher' ? 'Guru' : 'Siswa';
+          return "Akses ditolak! Akun ini bukan terdaftar sebagai $roleName.";
+        }
+      } else {
+        await _auth.signOut();
+        return "Data pengguna tidak ditemukan di sistem.";
+      }
 
       return "success";
     } on FirebaseAuthException catch (e) {
-      // Menangani error spesifik dari Firebase
-      return e.message ?? "Gagal mendaftar";
+      if (e.code == 'user-not-found') return "Email tidak terdaftar.";
+      if (e.code == 'wrong-password') return "Password salah.";
+      return e.message;
     } catch (e) {
       return "Terjadi kesalahan: $e";
     }
   }
 
-  // --- FUNGSI LOGIN ---
-  Future<String> loginUser({
-    required String email,
-    required String password,
+  // --- FUNGSI REGISTER ---
+  Future<String?> register({
+    required String email, 
+    required String password, 
+    required String username,
+    required String role, 
+    String? nisn, 
   }) async {
     try {
-      await _auth.signInWithEmailAndPassword(email: email, password: password);
+      UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      // Menyimpan data ke Firestore
+      await _firestore.collection('users').doc(userCredential.user!.uid).set({
+        'uid': userCredential.user!.uid,
+        'username': username,
+        'email': email,
+        'role': role, 
+        'nisn': nisn ?? "", 
+        'points': 0,
+        'createdAt': FieldValue.serverTimestamp(),
+        'photoUrl': "", 
+      });
+
       return "success";
     } on FirebaseAuthException catch (e) {
-      return e.message ?? "Login gagal";
+      return e.message;
+    } catch (e) {
+      return "Gagal mendaftar: $e";
     }
   }
 
   // --- FUNGSI LOGOUT ---
   Future<void> logout() async {
     await _auth.signOut();
-  }
-
-  // --- (OPSIONAL) FUNGSI CEK ROLE ---
-  // Berguna nanti jika Anda ingin menyembunyikan tombol "Tambah Materi" untuk murid
-  Future<String> getUserRole() async {
-    User? user = _auth.currentUser;
-    if (user != null) {
-      DocumentSnapshot doc = await _firestore.collection('users').doc(user.uid).get();
-      if (doc.exists) {
-        return doc['role'] ?? "student";
-      }
-    }
-    return "student";
   }
 }
