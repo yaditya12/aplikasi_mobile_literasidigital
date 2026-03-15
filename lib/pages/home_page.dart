@@ -12,6 +12,10 @@ import 'profile_page.dart';
 import 'join_quiz_page.dart'; 
 import 'login_page.dart'; 
 
+// IMPORT FILE BARU
+import 'simulation_page.dart';
+import 'manage_simulation_page.dart';
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -116,10 +120,6 @@ class _HomePageState extends State<HomePage> {
 
               // 2. Panggil Logout
               await AuthService().logout(); 
-
-              // 3. TIDAK PERLU NAVIGASI MANUAL (Navigator.push...)
-              // StreamBuilder di main.dart akan mendeteksi user = null
-              // dan otomatis melempar Anda ke Login Page dengan mulus.
             }, 
             child: const Text("Keluar", style: TextStyle(color: Colors.red))
           ),
@@ -162,18 +162,38 @@ class _HomePageState extends State<HomePage> {
             slivers: [
               _buildSliverAppBar(displayName, points, userRole, photoUrl),
               
-              // QUICK MENU
+              // --- QUICK MENU (DIUBAH MENJADI HORIZONTAL SCROLL) ---
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 25, horizontal: 10),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _buildQuickMenu(context, Icons.add, "Join Quiz", const Color(0xFF9C27B0), () => Navigator.push(context, MaterialPageRoute(builder: (c) => const JoinQuizPage()))),
-                      _buildQuickMenu(context, Icons.bar_chart, "Rank", const Color(0xFF00BFA5), () => Navigator.push(context, MaterialPageRoute(builder: (c) => const LeaderboardPage()))),
-                      _buildQuickMenu(context, Icons.emoji_events, "Badge", const Color(0xFFFF7043), () => Navigator.push(context, MaterialPageRoute(builder: (c) => const AchievementsPage()))),
-                      _buildQuickMenu(context, Icons.logout, "Logout", Colors.redAccent, _showLogoutDialog),
-                    ],
+                  padding: const EdgeInsets.symmetric(vertical: 25),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // MENU LAMA
+                        _buildQuickMenu(context, Icons.add, "Join Quiz", const Color(0xFF9C27B0), () => Navigator.push(context, MaterialPageRoute(builder: (c) => const JoinQuizPage()))),
+                        const SizedBox(width: 15),
+                        _buildQuickMenu(context, Icons.bar_chart, "Rank", const Color(0xFF00BFA5), () => Navigator.push(context, MaterialPageRoute(builder: (c) => const LeaderboardPage()))),
+                        const SizedBox(width: 15),
+                        _buildQuickMenu(context, Icons.emoji_events, "Badge", const Color(0xFFFF7043), () => Navigator.push(context, MaterialPageRoute(builder: (c) => const AchievementsPage()))),
+                        const SizedBox(width: 15),
+                        
+                        // MENU BARU
+                        _buildQuickMenu(context, Icons.security, "Simulasi", Colors.blue, () => Navigator.push(context, MaterialPageRoute(builder: (c) => const SimulationPage()))),
+                        
+                        // MENU KELOLA (HANYA MUNCUL UNTUK GURU)
+                        if (userRole == 'teacher') ...[
+                          const SizedBox(width: 15),
+                          _buildQuickMenu(context, Icons.edit_document, "Kelola", Colors.orange, () => Navigator.push(context, MaterialPageRoute(builder: (c) => const ManageSimulationPage()))),
+                        ],
+                        
+                        // LOGOUT
+                        const SizedBox(width: 15),
+                        _buildQuickMenu(context, Icons.logout, "Logout", Colors.redAccent, _showLogoutDialog),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -268,11 +288,11 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // --- WIDGET RAK BUKU HORIZONTAL (UPDATED) ---
+  // --- WIDGET RAK BUKU HORIZONTAL ---
   Widget _buildBookShelf() {
     return SliverToBoxAdapter(
       child: Container(
-        height: 200, // Tinggi sedikit dikurangi karena tombol hilang
+        height: 200, 
         margin: const EdgeInsets.only(top: 10),
         child: ListView.builder(
           padding: const EdgeInsets.only(left: 20),
@@ -281,15 +301,14 @@ class _HomePageState extends State<HomePage> {
           itemBuilder: (context, index) {
             final book = bookList[index];
             return Container(
-              width: 120, // Lebar Buku
+              width: 120, 
               margin: const EdgeInsets.only(right: 15),
-              decoration: BoxDecoration(
-                color: Colors.transparent, // Background transparan agar rapi
+              decoration: const BoxDecoration(
+                color: Colors.transparent, 
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Gambar Cover (Bagian Atas)
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
@@ -305,8 +324,6 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  
-                  // Judul & Penulis (Tanpa Tombol)
                   Text(
                     book['title']!,
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87),
@@ -351,7 +368,7 @@ class _HomePageState extends State<HomePage> {
                   )
                 ),
                 const SizedBox(width: 12),
-                Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [const Text("Selamat Datang!", style: TextStyle(color: Colors.white70, fontSize: 12)), Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)), Text(role == 'teacher' ? "(Guru)" : "(Siswa)", style: TextStyle(color: Colors.white70, fontSize: 11))]),
+                Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [const Text("Selamat Datang!", style: TextStyle(color: Colors.white70, fontSize: 12)), Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)), Text(role == 'teacher' ? "(Guru)" : "(Siswa)", style: const TextStyle(color: Colors.white70, fontSize: 11))]),
               ]),
               Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(20)), child: Row(children: [const Icon(Icons.stars, color: Colors.amber, size: 18), const SizedBox(width: 4), Text("$points", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))])),
             ],
@@ -361,5 +378,19 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildQuickMenu(BuildContext c, IconData i, String l, Color k, VoidCallback t) { return GestureDetector(onTap: t, child: Column(children: [Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: k, borderRadius: BorderRadius.circular(15), boxShadow: [BoxShadow(color: k.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))]), child: Icon(i, color: Colors.white, size: 24)), const SizedBox(height: 8), Text(l, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600))])); }
+  Widget _buildQuickMenu(BuildContext c, IconData i, String l, Color k, VoidCallback t) { 
+    return GestureDetector(
+      onTap: t, 
+      child: SizedBox(
+        width: 65,
+        child: Column(
+          children: [
+            Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: k, borderRadius: BorderRadius.circular(15), boxShadow: [BoxShadow(color: k.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))]), child: Icon(i, color: Colors.white, size: 24)), 
+            const SizedBox(height: 8), 
+            Text(l, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis)
+          ]
+        ),
+      )
+    ); 
+  }
 }
