@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart'; // Tambahkan intl di pubspec.yaml jika ingin format tanggal cantik
 
 class QuizHistoryPage extends StatelessWidget {
   const QuizHistoryPage({super.key});
@@ -21,7 +20,6 @@ class QuizHistoryPage extends StatelessWidget {
       body: user == null 
           ? const Center(child: Text("Silakan login kembali"))
           : StreamBuilder<QuerySnapshot>(
-              // Ambil data dari sub-collection 'history' urut berdasarkan waktu terbaru
               stream: FirebaseFirestore.instance
                   .collection('users')
                   .doc(user.uid)
@@ -29,6 +27,10 @@ class QuizHistoryPage extends StatelessWidget {
                   .orderBy('timestamp', descending: true)
                   .snapshots(),
               builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Center(child: Text("Terjadi kesalahan: ${snapshot.error}"));
+                }
+
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
@@ -56,11 +58,19 @@ class QuizHistoryPage extends StatelessWidget {
                     final score = data['score'] ?? 0;
                     final title = data['quizTitle'] ?? "Kuis";
                     
-                    // Format Tanggal (Opsional, perlu package intl)
-                    // String date = DateFormat('dd MMM yyyy, HH:mm').format((data['timestamp'] as Timestamp).toDate());
-                    // Versi sederhana tanpa package intl:
-                    DateTime dt = (data['timestamp'] as Timestamp? ?? Timestamp.now()).toDate();
-                    String date = "${dt.day}/${dt.month}/${dt.year} ${dt.hour}:${dt.minute}";
+                    // MEMBUAT FORMAT TANGGAL MANUAL AMAN & RAPI (Tanpa package intl)
+                    String date = "Waktu tidak diketahui";
+                    if (data['timestamp'] != null) {
+                      DateTime dt = (data['timestamp'] as Timestamp).toDate();
+                      
+                      // Menambahkan angka 0 di depan jika hari/bulan/jam/menit bernilai < 10 (Contoh: 05)
+                      String day = dt.day.toString().padLeft(2, '0');
+                      String month = dt.month.toString().padLeft(2, '0');
+                      String hour = dt.hour.toString().padLeft(2, '0');
+                      String minute = dt.minute.toString().padLeft(2, '0');
+                      
+                      date = "$day-$month-${dt.year} pukul $hour:$minute";
+                    }
 
                     return Card(
                       margin: const EdgeInsets.only(bottom: 15),
@@ -74,7 +84,7 @@ class QuizHistoryPage extends StatelessWidget {
                             color: Colors.green.withOpacity(0.1),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.check, color: Colors.green, size: 24), // Centang Hijau
+                          child: const Icon(Icons.check, color: Colors.green, size: 24),
                         ),
                         title: Text(
                           title,

@@ -1,9 +1,11 @@
+import 'dart:async'; // <-- Tambahan import untuk fungsi Timeout
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'edit_profile_page.dart';
 import 'quiz_history_page.dart';
 import 'help_center_page.dart';
+import 'login_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -13,15 +15,143 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
+  bool _sedangMenghapus = false;
   
+  // --- FUNGSI 1: MUNCULKAN POP-UP KONFIRMASI ---
+  void _tampilkanKonfirmasiHapus(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.red, size: 28),
+            SizedBox(width: 10),
+            Text("Hapus Akun?"),
+          ],
+        ),
+        content: const Text(
+          "Apakah Anda yakin ingin menghapus akun ini secara permanen? Semua data poin dan riwayat Anda akan hilang total.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Batal", style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              Navigator.pop(context); // Tutup pop-up konfirmasi
+              _hapusAkunPermanen(context); // Eksekusi penghapusan
+            },
+            child: const Text("Ya, Hapus", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- FUNGSI 2: PROSES HAPUS FIREBASE ---
+  Future<void> _hapusAkunPermanen(BuildContext context) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        setState(() {
+          _sedangMenghapus = true;
+        });
+
+        // 1. Hapus dokumen di Firestore (Diberi batasan waktu 5 detik agar tidak hang)
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .delete()
+            .timeout(const Duration(seconds: 5));
+
+        // 2. Hapus akun Autentikasi Firebase (Diberi batasan waktu 5 detik)
+        await user.delete().timeout(const Duration(seconds: 5));
+
+        // 3. Arahkan kembali ke halaman Login jika berhasil
+        if (mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginPage()), 
+            (route) => false,
+          );
+        }
+      }
+    } catch (e) {
+      // PENTING: Matikan status loading jika terjadi eror APAPUN
+      if (mounted) {
+        setState(() {
+          _sedangMenghapus = false;
+        });
+      }
+      
+      String pesanEror = "Terjadi kesalahan. Silakan coba lagi.";
+
+      // Cek tipe eror untuk memberikan pesan yang sesuai di layar HP
+      if (e is FirebaseAuthException) {
+        if (e.code == 'requires-recent-login') {
+          // Jika sesi login terlalu lama, paksa logout demi keamanan
+          await FirebaseAuth.instance.signOut();
+          if (mounted) {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (context) => const LoginPage()), 
+              (route) => false,
+            );
+          }
+          pesanEror = 'Demi keamanan, silakan Login kembali lalu ulangi proses Hapus Akun.';
+        } else {
+          pesanEror = e.message ?? "Gagal menghapus autentikasi akun.";
+        }
+      } else if (e is FirebaseException) {
+        pesanEror = "Firestore Diblokir: ${e.message}\n(Periksa Firestore Rules Anda!)";
+      } else if (e is TimeoutException) {
+        pesanEror = "Koneksi lambat/habis. Periksa jaringan internet Anda.";
+      }
+
+      // Tampilkan pesan kesalahan di bawah layar
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(pesanEror), 
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_sedangMenghapus) {
+      return const Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: Colors.red),
+              SizedBox(height: 20),
+              Text(
+                "Menghapus akun Anda...\nMohon tunggu sebentar.",
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final User? currentUser = FirebaseAuth.instance.currentUser;
 
     if (currentUser == null) return const Scaffold(body: Center(child: Text("Anda belum login")));
 
     return Scaffold(
-      backgroundColor: Colors.white, // Background Putih Bersih
+      backgroundColor: Colors.white,
       appBar: AppBar(
         title: const Text("Profil Saya", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
         centerTitle: true,
@@ -54,7 +184,6 @@ class _ProfilePageState extends State<ProfilePage> {
                 child: Column(
                   children: [
                     const SizedBox(height: 20),
-                    // --- FOTO PROFIL BESAR ---
                     Container(
                       padding: const EdgeInsets.all(4), 
                       decoration: BoxDecoration(
@@ -71,13 +200,11 @@ class _ProfilePageState extends State<ProfilePage> {
                     ),
                     const SizedBox(height: 15),
                     
-                    // --- NAMA & EMAIL ---
                     Text(username, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87)),
                     Text(email, style: const TextStyle(color: Colors.grey, fontSize: 14)),
 
                     const SizedBox(height: 30),
 
-                    // --- KARTU STATISTIK BERWARNA ---
                     Row(
                       children: [
                         Expanded(
@@ -85,8 +212,8 @@ class _ProfilePageState extends State<ProfilePage> {
                             "Total Poin", 
                             "$myPoints", 
                             Icons.stars_rounded, 
-                            const Color(0xFFFFF3E0), // Background Oranye Muda
-                            Colors.orange // Warna Ikon/Teks
+                            const Color(0xFFFFF3E0), 
+                            Colors.orange 
                           )
                         ),
                         const SizedBox(width: 15),
@@ -95,8 +222,8 @@ class _ProfilePageState extends State<ProfilePage> {
                             "Peringkat", 
                             rankStr, 
                             Icons.emoji_events_rounded, 
-                            const Color(0xFFEDE7F6), // Background Ungu Muda
-                            const Color(0xFF6A11CB) // Warna Ikon/Teks
+                            const Color(0xFFEDE7F6), 
+                            const Color(0xFF6A11CB) 
                           )
                         ),
                       ],
@@ -106,16 +233,21 @@ class _ProfilePageState extends State<ProfilePage> {
                     const Divider(),
                     const SizedBox(height: 10),
 
-                    // --- MENU SETTINGS (TANPA LOGOUT) ---
                     _buildSettingsTile(context, "Edit Profil", Icons.edit_outlined, Colors.blue, () {
                       Navigator.push(context, MaterialPageRoute(builder: (context) => EditProfilePage(currentUsername: username, currentEmail: email, currentPhotoUrl: photoUrl)));
                     }),
                     _buildSettingsTile(context, "Riwayat Kuis", Icons.history_edu, Colors.purple, () {
                       Navigator.push(context, MaterialPageRoute(builder: (context) => const QuizHistoryPage()));
                     }),
-                   _buildSettingsTile(context, "Pusat Bantuan", Icons.support_agent, Colors.green, () {
-  Navigator.push(context, MaterialPageRoute(builder: (context) => const HelpCenterPage()));
-}),
+                    _buildSettingsTile(context, "Pusat Bantuan", Icons.support_agent, Colors.green, () {
+                      Navigator.push(context, MaterialPageRoute(builder: (context) => const HelpCenterPage()));
+                    }),
+                    
+                    const SizedBox(height: 20),
+                    _buildSettingsTile(context, "Hapus Akun", Icons.person_off_rounded, Colors.red, () {
+                      _tampilkanKonfirmasiHapus(context);
+                    }),
+                    const SizedBox(height: 30),
                   ],
                 ),
               );
@@ -126,7 +258,6 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // Widget Kartu Statistik Berwarna
   Widget _buildColorCard(String label, String value, IconData icon, Color bgColor, Color accentColor) {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -145,7 +276,6 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // Widget Menu List Tile
   Widget _buildSettingsTile(BuildContext context, String title, IconData icon, Color color, VoidCallback onTap) {
     return ListTile(
       onTap: onTap,
@@ -158,7 +288,7 @@ class _ProfilePageState extends State<ProfilePage> {
         ),
         child: Icon(icon, color: color, size: 22),
       ),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: Colors.black87)),
+      title: Text(title, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: color == Colors.red ? Colors.red : Colors.black87)),
       trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.grey),
     );
   }
