@@ -5,7 +5,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'edit_profile_page.dart';
 import 'quiz_history_page.dart';
 import 'help_center_page.dart';
-import 'login_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -53,69 +52,72 @@ class _ProfilePageState extends State<ProfilePage> {
 
   // --- FUNGSI 2: PROSES HAPUS FIREBASE ---
   Future<void> _hapusAkunPermanen(BuildContext context) async {
+    // Capture navigator & messenger SEBELUM await, agar aman dari context yang
+    // mungkin sudah tidak valid setelah authStateChanges memicu rebuild.
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final messenger = ScaffoldMessenger.of(context);
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      navigator.pushNamedAndRemoveUntil('/login', (route) => false);
+      return;
+    }
+
+    setState(() {
+      _sedangMenghapus = true;
+    });
+
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        setState(() {
-          _sedangMenghapus = true;
-        });
+      // 1. Hapus dokumen Firestore
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .delete()
+          .timeout(const Duration(seconds: 5));
 
-        // 1. Hapus dokumen di Firestore (Diberi batasan waktu 5 detik agar tidak hang)
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .delete()
-            .timeout(const Duration(seconds: 5));
+      // 2. Hapus akun Autentikasi Firebase
+      await user.delete().timeout(const Duration(seconds: 5));
 
-        // 2. Hapus akun Autentikasi Firebase (Diberi batasan waktu 5 detik)
-        await user.delete().timeout(const Duration(seconds: 5));
+      // 3. Pastikan benar-benar signed out (kadang user.delete() perlu dibarengi signOut)
+      try {
+        await FirebaseAuth.instance.signOut();
+      } catch (_) {}
 
-        // 3. Arahkan kembali ke halaman Login jika berhasil
-        if (mounted) {
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (context) => const LoginPage()), 
-            (route) => false,
-          );
-        }
+      // 4. Navigate eksplisit ke LoginPage dan bersihkan seluruh stack.
+      //    Tidak mengandalkan StreamBuilder rebuild agar tidak ada race condition.
+      if (mounted) {
+        navigator.pushNamedAndRemoveUntil('/login', (route) => false);
       }
     } catch (e) {
-      // PENTING: Matikan status loading jika terjadi eror APAPUN
-      if (mounted) {
-        setState(() {
-          _sedangMenghapus = false;
-        });
-      }
-      
       String pesanEror = "Terjadi kesalahan. Silakan coba lagi.";
 
-      // Cek tipe eror untuk memberikan pesan yang sesuai di layar HP
       if (e is FirebaseAuthException) {
         if (e.code == 'requires-recent-login') {
-          // Jika sesi login terlalu lama, paksa logout demi keamanan
+          // Sesi login terlalu lama, paksa logout demi keamanan
           await FirebaseAuth.instance.signOut();
           if (mounted) {
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (context) => const LoginPage()), 
-              (route) => false,
-            );
+            navigator.pushNamedAndRemoveUntil('/login', (route) => false);
           }
-          pesanEror = 'Demi keamanan, silakan Login kembali lalu ulangi proses Hapus Akun.';
+          pesanEror =
+              'Demi keamanan, silakan Login kembali lalu ulangi proses Hapus Akun.';
         } else {
           pesanEror = e.message ?? "Gagal menghapus autentikasi akun.";
         }
       } else if (e is FirebaseException) {
-        pesanEror = "Firestore Diblokir: ${e.message}\n(Periksa Firestore Rules Anda!)";
+        pesanEror =
+            "Firestore Diblokir: ${e.message}\n(Periksa Firestore Rules Anda!)";
       } else if (e is TimeoutException) {
         pesanEror = "Koneksi lambat/habis. Periksa jaringan internet Anda.";
       }
 
-      // Tampilkan pesan kesalahan di bawah layar
+      // Matikan loading hanya jika widget masih ada (belum di-pop)
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        setState(() {
+          _sedangMenghapus = false;
+        });
+        messenger.showSnackBar(
           SnackBar(
-            content: Text(pesanEror), 
+            content: Text(pesanEror),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 5),
           ),
@@ -148,7 +150,18 @@ class _ProfilePageState extends State<ProfilePage> {
 
     final User? currentUser = FirebaseAuth.instance.currentUser;
 
-    if (currentUser == null) return const Scaffold(body: Center(child: Text("Anda belum login")));
+    if (currentUser == null) {
+      // Auth sudah hilang (mis. selesai hapus akun). Arahkan ke LoginPage.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Navigator.of(context, rootNavigator: true)
+              .pushNamedAndRemoveUntil('/login', (route) => false);
+        }
+      });
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
     return Scaffold(
       backgroundColor: Colors.white,
