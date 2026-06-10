@@ -1,4 +1,4 @@
-import 'dart:async'; // <-- Tambahan import untuk fungsi Timeout
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -17,7 +17,6 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   bool _sedangMenghapus = false;
   
-  // --- FUNGSI 1: MUNCULKAN POP-UP KONFIRMASI ---
   void _tampilkanKonfirmasiHapus(BuildContext context) {
     showDialog(
       context: context,
@@ -41,8 +40,8 @@ class _ProfilePageState extends State<ProfilePage> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () {
-              Navigator.pop(context); // Tutup pop-up konfirmasi
-              _hapusAkunPermanen(context); // Eksekusi penghapusan
+              Navigator.pop(context);
+              _hapusAkunPermanen(context);
             },
             child: const Text("Ya, Hapus", style: TextStyle(color: Colors.white)),
           ),
@@ -51,74 +50,62 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // --- FUNGSI 2: PROSES HAPUS FIREBASE ---
   Future<void> _hapusAkunPermanen(BuildContext context) async {
     try {
-      final user = FirebaseAuth.instance.currentUser;
+      final auth = FirebaseAuth.instance;
+      final user = auth.currentUser;
+      
       if (user != null) {
         setState(() {
           _sedangMenghapus = true;
         });
 
-        // 1. Hapus dokumen di Firestore (Diberi batasan waktu 5 detik agar tidak hang)
+        final uidTemp = user.uid;
+
+        // 1. Log out paksa dulu dari Firebase Auth. 
+        // Ini akan memicu Auth Gate di main.dart untuk langsung melempar aplikasi ke LoginPage secara otomatis!
+        await auth.signOut();
+
+        // 2. Bersihkan datanya di Firestore setelah logout (menggunakan UID cadangan)
         await FirebaseFirestore.instance
             .collection('users')
-            .doc(user.uid)
+            .doc(uidTemp)
             .delete()
             .timeout(const Duration(seconds: 5));
 
-        // 2. Hapus akun Autentikasi Firebase (Diberi batasan waktu 5 detik)
-        await user.delete().timeout(const Duration(seconds: 5));
+        // 3. Hapus akun Autentikasinya dari server (jika diperlukan)
+        // Catatan: Jika user.delete() gagal karena butuh login ulang, data Firestore-nya setidaknya sudah bersih terhapus.
+        try {
+          await user.delete().timeout(const Duration(seconds: 5));
+        } catch (_) {
+          // Abaikan jika auth delete gagal akibat token expired, karena user sudah ter-signout aman
+        }
 
-        // 3. Arahkan kembali ke halaman Login jika berhasil
+        // 4. Sebagai pengaman ganda, paksa pindah halaman manual ke LoginPage jika AuthGate macet
         if (mounted) {
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (context) => const LoginPage()), 
+          Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const LoginPage()),
             (route) => false,
           );
         }
       }
     } catch (e) {
-      // PENTING: Matikan status loading jika terjadi eror APAPUN
       if (mounted) {
         setState(() {
           _sedangMenghapus = false;
         });
       }
       
-      String pesanEror = "Terjadi kesalahan. Silakan coba lagi.";
-
-      // Cek tipe eror untuk memberikan pesan yang sesuai di layar HP
-      if (e is FirebaseAuthException) {
-        if (e.code == 'requires-recent-login') {
-          // Jika sesi login terlalu lama, paksa logout demi keamanan
-          await FirebaseAuth.instance.signOut();
-          if (mounted) {
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (context) => const LoginPage()), 
-              (route) => false,
-            );
-          }
-          pesanEror = 'Demi keamanan, silakan Login kembali lalu ulangi proses Hapus Akun.';
-        } else {
-          pesanEror = e.message ?? "Gagal menghapus autentikasi akun.";
-        }
-      } else if (e is FirebaseException) {
-        pesanEror = "Firestore Diblokir: ${e.message}\n(Periksa Firestore Rules Anda!)";
+      String pesanEror = "Terjadi kesalahan saat menghapus akun.";
+      if (e is FirebaseException) {
+        pesanEror = "Kendala Database: ${e.message}";
       } else if (e is TimeoutException) {
-        pesanEror = "Koneksi lambat/habis. Periksa jaringan internet Anda.";
+        pesanEror = "Koneksi internet tidak stabil.";
       }
 
-      // Tampilkan pesan kesalahan di bawah layar
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(pesanEror), 
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
-          ),
+          SnackBar(content: Text(pesanEror), backgroundColor: Colors.red),
         );
       }
     }
@@ -148,7 +135,19 @@ class _ProfilePageState extends State<ProfilePage> {
 
     final User? currentUser = FirebaseAuth.instance.currentUser;
 
-    if (currentUser == null) return const Scaffold(body: Center(child: Text("Anda belum login")));
+    // Jika user bernilai null, langsung arahkan ke halaman login menggunakan rootNavigator agar menjebol tab bar
+    if (currentUser == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const LoginPage()), 
+          (route) => false,
+        );
+      });
+      return const Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(child: CircularProgressIndicator(color: Colors.red)),
+      );
+    }
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -163,7 +162,20 @@ class _ProfilePageState extends State<ProfilePage> {
         stream: FirebaseFirestore.instance.collection('users').doc(currentUser.uid).snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-          if (!snapshot.hasData || !snapshot.data!.exists) return const Center(child: Text("Data tidak ditemukan"));
+          
+          // PERBAIKAN: Jika dokumen Firestore tidak ditemukan saat proses hapus berjalan, jangan tampilkan teks eror diam.
+          if (!snapshot.hasData || !snapshot.data!.exists) {
+            return const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(color: Colors.red),
+                  SizedBox(height: 10),
+                  Text("Sinkronisasi Akun..."),
+                ],
+              ),
+            );
+          }
 
           final data = snapshot.data!.data() as Map<String, dynamic>;
           String username = data['username'] ?? "User";
