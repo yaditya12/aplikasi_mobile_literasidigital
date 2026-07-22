@@ -64,7 +64,7 @@ class _LoginPageState extends State<LoginPage> {
                       begin: Alignment.topLeft, 
                       end: Alignment.bottomRight
                     ),
-                    borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(30), bottomRight: Radius.circular(100)),
+                    borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(40), bottomRight: Radius.circular(40)),
                   ),
                 ),
                 Positioned(
